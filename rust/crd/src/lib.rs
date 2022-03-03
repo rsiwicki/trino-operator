@@ -38,6 +38,7 @@ pub const LOG_PROPERTIES: &str = "log.properties";
 pub const PASSWORD_AUTHENTICATOR_PROPERTIES: &str = "password-authenticator.properties";
 pub const PASSWORD_DB: &str = "password.db";
 pub const HIVE_PROPERTIES: &str = "hive.properties";
+pub const DRUID_PROPERTIES: &str = "druid.properties";
 pub const ACCESS_CONTROL_PROPERTIES: &str = "access-control.properties";
 // node.properties
 pub const NODE_ENVIRONMENT: &str = "node.environment";
@@ -62,6 +63,9 @@ pub const FILE_PASSWORD_FILE: &str = "file.password-file";
 // file content keys
 pub const PW_FILE_CONTENT_MAP_KEY: &str = "pwFileContent";
 pub const CERT_FILE_CONTENT_MAP_KEY: &str = "serverCertificate";
+// druid.properties
+pub const DRUID_CONNECTION_URL: &str ="connection-url"; 
+pub const DRUID_CONNECTION_USER: &str ="connection-user"; 
 // hive.properties
 pub const S3_ENDPOINT: &str = "hive.s3.endpoint";
 pub const S3_ACCESS_KEY: &str = "hive.s3.aws-access-key";
@@ -121,6 +125,8 @@ pub struct TrinoClusterSpec {
     pub authorization: Option<Authorization>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3: Option<S3Connection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub druid: Option<DruidConnection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinators: Option<Role<TrinoConfig>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,6 +213,14 @@ pub struct S3Connection {
     pub secret_key: String,
     pub ssl_enabled: bool,
     pub path_style_access: bool,
+}
+
+/// Contains all the required connection information for PoC DRUID.
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DruidConnection {
+    pub connection_url: String,
+    pub connection_user: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -348,6 +362,19 @@ impl Configuration for TrinoConfig {
                     result.insert(
                         S3_PATH_STYLE_ACCESS.to_string(),
                         Some(s3_connection.path_style_access.to_string()),
+                    );
+                }
+            }
+            DRUID_PROPERTIES => {
+                if let Some(druid_connection) = &resource.spec.druid {
+                    result.insert(
+                        DRUID_CONNECTION_URL.to_string(),
+                        Some(druid_connection.connection_url.clone()),
+                    );
+
+                    result.insert(
+                        DRUID_CONNECTION_USER.to_string(),
+                        Some(druid_connection.connection_user.clone()),
                     );
                 }
             }

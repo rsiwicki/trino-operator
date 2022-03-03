@@ -199,6 +199,18 @@ spec:
                   required:
                     - roleGroups
                   type: object
+                druid:
+                  description: Contains all the required connection information for PoC DRUID.
+                  nullable: true
+                  properties:
+                    connectionUrl:
+                      type: string
+                    connectionUser:
+                      type: string
+                  required:
+                    - connectionUrl
+                    - connectionUser
+                  type: object
                 hiveConfigMapName:
                   nullable: true
                   type: string

@@ -40,7 +40,7 @@ use stackable_trino_crd::{
     discovery::{TrinoDiscovery, TrinoDiscoveryProtocol, TrinoPodRef},
     TrinoCluster, TrinoClusterSpec, TrinoRole, ACCESS_CONTROL_PROPERTIES, APP_NAME,
     CONFIG_DIR_NAME, CONFIG_PROPERTIES, DATA_DIR_NAME, DISCOVERY_URI, FIELD_MANAGER_SCOPE,
-    HIVE_PROPERTIES, HTTPS_PORT, HTTPS_PORT_NAME, HTTP_PORT, HTTP_PORT_NAME, JVM_CONFIG,
+    HIVE_PROPERTIES,DRUID_PROPERTIES, HTTPS_PORT, HTTPS_PORT_NAME, HTTP_PORT, HTTP_PORT_NAME, JVM_CONFIG,
     KEYSTORE_DIR_NAME, LOG_PROPERTIES, METRICS_PORT, METRICS_PORT_NAME, NODE_PROPERTIES,
     PASSWORD_AUTHENTICATOR_PROPERTIES, PASSWORD_DB, RW_CONFIG_DIR_NAME,
     USER_PASSWORD_DATA_DIR_NAME,
@@ -375,7 +375,7 @@ fn build_rolegroup_catalog_config_map(
     rolegroup_ref: &RoleGroupRef<TrinoCluster>,
     config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
 ) -> Result<ConfigMap> {
-    let mut cm_hive_data = BTreeMap::new();
+    let mut cm_all_data = BTreeMap::new();
 
     for (property_name_kind, config) in config {
         let mut transformed_config: BTreeMap<String, Option<String>> = config
@@ -383,26 +383,68 @@ fn build_rolegroup_catalog_config_map(
             .map(|(k, v)| (k.clone(), Some(v.clone())))
             .collect();
 
+        //let mut hacked_postgres_config: BTreeMap<String, Option<String>> = BTreeMap::new();
+        //let mut hacked_druid_config: BTreeMap<String, Option<String>> = BTreeMap::new();
+        
         match property_name_kind {
-            PropertyNameKind::File(file_name) if file_name == HIVE_PROPERTIES => {
+            PropertyNameKind::File(file_name) if (file_name == HIVE_PROPERTIES || file_name == DRUID_PROPERTIES) => {
                 if trino.spec.hive_config_map_name.is_some() {
                     // hive.metastore.uri will be added later via command script from the
                     // "HIVE" env variable
                     transformed_config
                         .insert("connector.name".to_string(), Some("hive".to_string()));
-
+                
                     let config_properties = product_config::writer::to_java_properties_string(
                         transformed_config.iter(),
                     )
                     .context(FailedToWriteJavaPropertiesSnafu)?;
 
-                    cm_hive_data.insert(file_name.to_string(), config_properties);
+                    cm_all_data.insert(file_name.to_string(), config_properties);
+
+                    let mut hacked_druid_config: BTreeMap<String, Option<String>> = BTreeMap::new();
+                    
+                    hacked_druid_config
+                        .insert("connector.name".to_string(), Some("druid".to_string()));
+                    hacked_druid_config
+                        .insert("connection-url".to_string(), Some("jdbc:avatica:remote:url=http://simple-derby-druid-broker-default-0.simple-derby-druid-broker-default.s-iot.svc.cluster.local:8082/druid/v2/sql/avatica/;authentication=BASIC".to_string()));
+                    hacked_druid_config
+                        .insert("connection-user".to_string(), Some("admin".to_string()));
+
+                    let config_properties_hack_druid = product_config::writer::to_java_properties_string(
+                        hacked_druid_config.iter(),
+                    )
+                    .context(FailedToWriteJavaPropertiesSnafu)?;
+               
+                    cm_all_data.insert("druid.properties".to_string(), config_properties_hack_druid);
+
+                    let mut hacked_postgres_config: BTreeMap<String, Option<String>> = BTreeMap::new();
+
+                    hacked_postgres_config
+                        .insert("connector.name".to_string(), Some("postgresql".to_string()));
+                    hacked_postgres_config
+                        .insert("connection-url".to_string(), Some("jdbc:postgresql://iot-demo-postgresql-0.iot-demo-postgresql-hl.s-iot.svc.cluster.local:5432/superset".to_string()));
+                    hacked_postgres_config
+                        .insert("connection-user".to_string(), Some("superset".to_string()));
+                    hacked_postgres_config
+                        .insert("connection-password".to_string(), Some("superset".to_string()));
+
+
+                    let config_properties_hack = product_config::writer::to_java_properties_string(
+                        hacked_postgres_config.iter(),
+                    )
+                    .context(FailedToWriteJavaPropertiesSnafu)?;
+
+
+                    cm_all_data.insert("postgresql.properties".to_string(), config_properties_hack);
+                    
+
                 }
             }
             _ => {}
         }
     }
 
+    // ROB - this is continuously getting updated.
     ConfigMapBuilder::new()
         .metadata(
             ObjectMetaBuilder::new()
@@ -419,11 +461,11 @@ fn build_rolegroup_catalog_config_map(
                 )
                 .build(),
         )
-        .data(cm_hive_data)
+        .data(cm_all_data)
         .build()
         .with_context(|_| BuildRoleGroupConfigSnafu {
             rolegroup: rolegroup_ref.clone(),
-        })
+        }) 
 }
 
 /// The rolegroup [`StatefulSet`] runs the rolegroup, as configured by the administrator.
@@ -838,6 +880,7 @@ fn validated_product_config(
     let config_files = vec![
         PropertyNameKind::File(CONFIG_PROPERTIES.to_string()),
         PropertyNameKind::File(HIVE_PROPERTIES.to_string()),
+        PropertyNameKind::File(DRUID_PROPERTIES.to_string()),
         PropertyNameKind::File(NODE_PROPERTIES.to_string()),
         PropertyNameKind::File(JVM_CONFIG.to_string()),
         PropertyNameKind::File(LOG_PROPERTIES.to_string()),
